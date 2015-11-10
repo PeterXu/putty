@@ -140,3 +140,5 @@
 /windows/.bmake
 /windows/*.sln
 /windows/*.suo
+Debug
+Release

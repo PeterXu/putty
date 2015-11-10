@@ -10188,39 +10188,47 @@ static void do_ssh2_authconn(Ssh ssh, const unsigned char *in, int inlen,
 		int ret; /* not live over crReturn */
 		int changereq_first_time; /* not live over crReturn */
 
-		ssh->pkt_actx = SSH2_PKTCTX_PASSWORD;
+		char *password = conf_get_str(ssh->conf, CONF_password);
+		if (strlen(password) == 0)
+		{
+			ssh->pkt_actx = SSH2_PKTCTX_PASSWORD;
 
-		s->cur_prompt = new_prompts(ssh->frontend);
-		s->cur_prompt->to_server = TRUE;
-		s->cur_prompt->name = dupstr("SSH password");
-		add_prompt(s->cur_prompt, dupprintf("%s@%s's password: ",
-						    ssh->username,
-						    ssh->savedhost),
-			   FALSE);
+			s->cur_prompt = new_prompts(ssh->frontend);
+			s->cur_prompt->to_server = TRUE;
+			s->cur_prompt->name = dupstr("SSH password");
+			add_prompt(s->cur_prompt, dupprintf("%s@%s's password: ",
+				ssh->username,
+				ssh->savedhost),
+				FALSE);
 
-		ret = get_userpass_input(s->cur_prompt, NULL, 0);
-		while (ret < 0) {
-		    ssh->send_ok = 1;
-		    crWaitUntilV(!pktin);
-		    ret = get_userpass_input(s->cur_prompt, in, inlen);
-		    ssh->send_ok = 0;
+			ret = get_userpass_input(s->cur_prompt, NULL, 0);
+			while (ret < 0) {
+				ssh->send_ok = 1;
+				crWaitUntilV(!pktin);
+				ret = get_userpass_input(s->cur_prompt, in, inlen);
+				ssh->send_ok = 0;
+			}
+			if (!ret) {
+				/*
+				 * Failed to get responses. Terminate.
+				 */
+				free_prompts(s->cur_prompt);
+				ssh_disconnect(ssh, NULL, "Unable to authenticate",
+					SSH2_DISCONNECT_AUTH_CANCELLED_BY_USER,
+					TRUE);
+				crStopV;
+			}
+			/*
+			 * Squirrel away the password. (We may need it later if
+			 * asked to change it.)
+			 */
+			s->password = dupstr(s->cur_prompt->prompts[0]->result);
+			free_prompts(s->cur_prompt);
 		}
-		if (!ret) {
-		    /*
-		     * Failed to get responses. Terminate.
-		     */
-		    free_prompts(s->cur_prompt);
-		    ssh_disconnect(ssh, NULL, "Unable to authenticate",
-				   SSH2_DISCONNECT_AUTH_CANCELLED_BY_USER,
-				   TRUE);
-		    crStopV;
+		else 
+		{
+			s->password = dupstr(password);
 		}
-		/*
-		 * Squirrel away the password. (We may need it later if
-		 * asked to change it.)
-		 */
-		s->password = dupstr(s->cur_prompt->prompts[0]->result);
-		free_prompts(s->cur_prompt);
 
 		/*
 		 * Send the password packet.
